@@ -1,0 +1,22 @@
+pipeline {   
+    agent any 
+    tools{
+        jdk 'jdk11'
+        maven 'maven3'
+    }
+
+    stages {
+        stage('Git checkout') {
+            steps {
+                git branch: 'main', changelog: false, poll: false, url: 'https://github.com/Nikhilgujela/Log--Processing-test.git'
+            }
+        }        
+        stage('Package') {
+            steps {
+                sh "mvn clean package"
+                
+                 }
+        }
+
+    }
+}
