@@ -6,5 +6,7 @@ WORKDIR /app
 
 COPY target/logcreator-0.0.1-SNAPSHOT.jar app.jar
 
+EXPOSE 8080
+
 # Command to run the jar file
 CMD ["java", "-jar", "app.jar"]
