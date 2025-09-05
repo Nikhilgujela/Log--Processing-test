@@ -1,0 +1,108 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = 'us-east-1' // Change as needed
+        ECR_ACCOUNT = '123456789012' // Replace with your AWS Account ID
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Backend') {
+            steps {
+                script {
+                    def services = ['service1', 'service2', 'service3']
+                    services.each { svc ->
+                        dir("backend/${svc}") {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build Frontend') {
+            steps {
+                dir('frontend') {
+                    // Adjust the build command to your frontend tech
+                    sh 'npm install'
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                script {
+                    def services = ['service1', 'service2', 'service3']
+
+                    services.each { svc ->
+                        def image = "${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${svc}:${IMAGE_TAG}"
+                        sh "docker build -t ${image} backend/${svc}"
+                    }
+
+                    // Frontend image
+                    def frontendImage = "${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${IMAGE_TAG}"
+                    sh "docker build -t ${frontendImage} frontend"
+                }
+            }
+        }
+
+        stage('Login to ECR') {
+            steps {
+                sh """
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    docker login --username AWS --password-stdin ${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                """
+            }
+        }
+
+        stage('Push to ECR') {
+            steps {
+                script {
+                    def services = ['service1', 'service2', 'service3']
+                    services.each { svc ->
+                        def image = "${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${svc}:${IMAGE_TAG}"
+                        sh "docker push ${image}"
+                    }
+
+                    def frontendImage = "${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${IMAGE_TAG}"
+                    sh "docker push ${frontendImage}"
+                }
+            }
+        }
+
+        stage('Deploy with Docker Compose') {
+            steps {
+                script {
+                    // Update docker-compose.yml using sed or dynamically
+                    def composeTemplate = readFile('docker-compose.yml')
+
+                    def updatedCompose = composeTemplate
+                        .replaceAll(/image:.*service1.*/, "image: ${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/service1:${IMAGE_TAG}")
+                        .replaceAll(/image:.*service2.*/, "image: ${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/service2:${IMAGE_TAG}")
+                        .replaceAll(/image:.*service3.*/, "image: ${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/service3:${IMAGE_TAG}")
+                        .replaceAll(/image:.*frontend.*/, "image: ${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:${IMAGE_TAG}")
+
+                    writeFile file: 'docker-compose.generated.yml', text: updatedCompose
+
+                    sh 'docker-compose -f docker-compose.generated.yml down'
+                    sh 'docker-compose -f docker-compose.generated.yml up -d'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
